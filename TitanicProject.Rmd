@@ -1,0 +1,363 @@
+---
+title: "Titanic Study Case Project"
+author: "Sayyid Muhammad Quthb"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    df_print: paged
+    theme: united
+    highlight: tango
+    code_folding: hide
+---
+
+# Problem Overview
+
+The sinking of the Titanic is one of the most infamous shipwrecks in history. On April 15, 1912, during her maiden voyage, the widely considered “unsinkable” RMS Titanic sank after colliding with an iceberg. Unfortunately, there weren’t enough lifeboats for everyone on board, resulting in the death of 1502 out of 2224 passengers and crew. While there was some element of luck involved in surviving, it seems some groups of people were more likely to survive than others. Our objectives are to analyze and find insights about what kind of group that more likely to survive from the accident from the data given.
+
+
+# Data Preparation
+
+Before we dive into the problem, we need to understand the data. First, we need to import the data and show into a dataframe for brief knowledge about the dataset and show the data afterwards.
+```{r}
+data <- read.csv("data_input/train.csv")
+data
+```
+Table 2.1. Titanic Dataset
+
+Additional information:   
+C = Cherbourg, Q = Queenstown, S = Southampton
+
+We want to see the data structure and its components to evaluate whether some data types need to be changed.
+```{r}
+str(data)
+```
+
+From the information above, some data types need to be changed:   
+- Survived -> factor   
+- Pclass -> factor   
+- Sex -> factor   
+- Embarked -> factor   
+
+```{r}
+data$Pclass <- as.factor(data$Pclass)
+data$Sex <- as.factor(data$Sex)
+data$Embarked <- as.factor(data$Embarked)
+data$Survived <- as.factor(data$Survived)
+
+str(data)
+```
+
+Our dataset is ready to go to the further steps.
+
+
+# Data Exploration
+
+Importing libraries.
+```{r}
+library(ggplot2)
+library(dplyr)
+library(RColorBrewer)
+```
+
+In this step, we want to explore our data to find abnormalities and insights in our data.
+```{r}
+summary(data)
+```
+There are 177 missing values in "Age" column, we can do NA imputation to fill the missing values. Moreover, "Name" and "Cabin" is considered to be unique values. In predicting whether a passanger survived or not, we don't need unique values. Thus, we can drop the columns. There are also 2 missing values in "Embarked" column.
+
+## Solving Missing Values in Embarked Column
+
+Firstly, We want to know the information about those 2 passengers whose the embarked status is unknown.
+```{r}
+as.data.frame(data[data$Embarked == "", ])
+```
+Table 3.1.1. Passengers with Unknown Embarked Status
+
+There are 2 passengers with the information as shown below:   
+1. Ms. Amelie Icard:   
+   - PassengerId = 62   
+   - Sex = Female   
+   - Age = 38   
+   - Pclass = 1   
+   - SibSp = 0   
+   - Parch = 0   
+   - Fare = 80   
+   - Survived = yes   
+2. Mrs. George Nelson Stone:   
+   - PassengerId = 830   
+   - Sex = Female   
+   - Age = 62   
+   - Pclass = 1   
+   - SibSp = 0   
+   - Parch = 0   
+   - Fare = 80   
+   - Survived = yes
+   
+```{r}
+aggregate(Fare ~ Pclass + Embarked, data = data, FUN = "median")
+```
+Table 3.1.2. Aggregate Table of Passenger Class and Embarked Status Based on Fare Price
+
+Both passengers have the same information in some columns. Hence, we can find the embarked status according some condition which are:   
+- Passenger Class = 1 (Because they were from 1st class)   
+- Fare = 78 < x < 90 (Because their fare price was 80)   
+- PassengerId > 60 (Because both passengers Id was above 60)   
+- SibSP and Parch = 0 (Because nethier of them went with their sibling/ spouse/ parent/ child)   
+
+```{r}
+summary(as.data.frame(data[data$Pclass == 1 & data$Fare > 78 & data$Fare < 90 & data$PassengerId > 60 & data$Parch == 0 & data$SibSp == 0, ]))
+```
+
+We got 2 options which are "C" and "S". We will choose "C" because the median fare for "C" is close to 80.
+
+```{r}
+data[data$Embarked == "", "Embarked"] <- "C"
+```
+
+## Solving Missing Values in Age Column
+
+In our data, the "Age" is vary and there are 3 passenger classes that may have different median of "Age". So, we will make a boxplot to find the median for each class.
+
+```{r}
+ggplot(data, aes(x = Pclass, y = Age, fill = Pclass)) + 
+  geom_boxplot(na.rm = TRUE, alpha = 0.3) +
+  labs(title = "Boxplot Age for Each Passenger Class",
+       x = "Passenger Class",
+       y = "Age",
+       fill = "Passenger Class") +
+  theme(plot.title = element_text(hjust = 0.5, size = 14),
+        legend.position = "none") +
+  theme_minimal()
+```
+
+There are 3 different median of "Age" for each class. But, We want to have updated value for each median. In order to cope this, we can subset the median "Age" for each class.
+
+```{r}
+medianclass1 <- data[data$Pclass == 1, c("Age", "Pclass")]
+medianclass2 <- data[data$Pclass == 2, c("Age", "Pclass")]
+medianclass3 <- data[data$Pclass == 3, c("Age", "Pclass")]
+
+median1 <- median(medianclass1$Age, na.rm = TRUE)
+median2 <- median(medianclass2$Age, na.rm = TRUE)
+median3 <- median(medianclass3$Age, na.rm = TRUE)
+```
+
+```{r}
+impute_age <- function(age, pclass){
+  # age <- data$Age
+  # pclass <- data$Pclass
+
+  if (is.na(age)){
+    if (pclass == 1){
+      return (median1)
+    }
+    else if (pclass == 2){
+      return (median2)
+    }
+    else {
+      return (median3)
+    }
+  }
+  else {
+    return (age)
+  }
+}
+```
+
+```{r}
+data$Age <- mapply(FUN = impute_age, age = data$Age, pclass = data$Pclass)
+
+summary(data)
+```
+
+
+# Data VIsualization
+
+correlation between gender, pclass, and survived
+
+```{r}
+ggplot(data = data, aes(x = Survived, fill = Sex)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Survived Status Based on Gender",
+       x = "Survived Status",
+       y = "Total",
+       fill = "Gender") +
+  theme_minimal()
+```
+
+FIgure 4.1. Survived Status for Each Gender
+
+From the chart above, we know that the majority of people who survived were female. majority of male did not survive.
+
+```{r}
+ggplot(data = data, aes(x = Survived, fill = Pclass)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Passenger Class Based on Survival Status Barplot",
+       x = "Survived Status",
+       y = "Total Passenger",
+       fill = "Passenger Class") +
+  scale_fill_brewer(palette = "Set2") +
+  theme(legend.position="top") +
+  theme_minimal()
+```
+
+FIgure 4.2. Survived Status for Each Class
+
+We got a new insight about the data distribution, people who from 3rd class are more likely to not survive, where the 2nd class is distributed evenly, and 1st class are more likely to survive from the accident.   
+
+
+Aggregating male passengers based on passenger class.
+```{r}
+male <- data[data$Sex == "male", ]
+aggregate(Sex ~ Pclass + Survived, data = male, FUN = "length")
+```
+Table 4.1. Passengers Survived Male Only   
+
+Aggregating female passengers based on passenger class.
+```{r}
+female <- data[data$Sex == "female", ]
+aggregate(Sex ~ Pclass + Survived, data = male, FUN = "length")
+```
+Table 4.2. Passengers Survived Female Only   
+
+```{r}
+ggplot(data = male, aes(x = Survived, fill = Pclass)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Passenger Class (Male) Based on Survival Status Barplot",
+       x = "Survived Status",
+       y = "Total Passenger",
+       fill = "Passenger Class") +
+  scale_fill_brewer(palette = "Set2") +
+  theme(legend.position="top") +
+  theme_minimal()
+```
+
+FIgure 4.3. Distribution of Male Passengers Survived for Each Class      
+
+Male Passengers from 3rd class are less likely to survive rather than the other classes.
+
+```{r}
+ggplot(data = female, aes(x = Survived, fill = Pclass)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Passenger Class (Female) Based on Survival Status Barplot",
+       x = "Survived Status",
+       y = "Total Passenger",
+       fill = "Passenger Class") +
+  scale_fill_brewer(palette = "Set2") +
+  theme(legend.position="top") +
+  theme_minimal()
+```
+
+FIgure 4.4. Distribution of Female Passengers Survived for Each Class   
+
+Female passengers from 3rd class are less likely to survive rather than the other classes.
+
+
+```{r}
+data_subset <- data[, c("Survived", "Pclass", "Sex")]
+
+data_agg <- data_subset %>% 
+  mutate(Survived = as.factor(Survived)) %>% 
+  count(Sex, Survived, Pclass, sort = TRUE)
+
+data_agg
+```
+
+Table 4.3. Number of Passenger Survived Based on Gender and Passenger Class   
+
+```{r}
+ggplot(data_agg, mapping = aes(x = Survived, y = n)) +
+  geom_col(aes(fill = Sex), position = "dodge") +
+  labs(title = "Passenger Survived Based on Gender and Passenger Class",
+       x = "Survived Status",
+       y = "Total") +
+  facet_wrap(~Pclass) +
+  theme_bw()
+```
+
+Figure 4.5. Barchart of People Survived Based on Gender and Passenger Class
+
+
+
+We want to see the distribution of sruvived status based on their ages.
+```{r}
+ggplot(data, aes(x = Age)) +
+  geom_histogram(data = data[data$Survived == 0, ], fill = "red", alpha=0.6, position="identity", bins = 20) +
+  geom_histogram(data = data[data$Survived == 1, ], fill = "blue", alpha=0.6, position="identity", bins = 20) +
+  theme_classic()
+```
+
+Figure 4.6. Histogram of People Survived Based on Age (Survived = blue, Not Survived = red)  
+
+Most of passengers older than 60 years old didn't survive at the accident. Meanwhile, most of passengers younger than 10 years old survived at the accident.   
+
+In some conditions, people from the same area tend to have same characters which might affect their reactions when an accident happened. So, we will try to find correlation between embarked status and survived status.
+```{r}
+ggplot(data = data, aes(x = Survived, fill = Embarked)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Embarked Status Based on Survived Status Barplot",
+       x = "Survived Status",
+       y = "Total Passenger",
+       fill = "Embarked Status") +
+  scale_fill_brewer(palette = "Set1") +
+  theme(legend.position="top") +
+  theme_minimal()
+```
+
+Figure 4.7. Barplot of People Survived Based on Embarked Status
+
+Passengers from Southampton (S) are less likely to survived, followed by passengers from Cherbourg (C). More passengers from Queenstown (Q) survived from the accident. We would like to know deeper about our findings. So, we will subset our data to find more information based on gender.
+```{r}
+data_subset2 <- data[, c("Survived", "Embarked", "Sex")]
+
+data_agg2 <- data_subset2 %>% 
+  mutate(Survived = as.factor(Survived)) %>% 
+  count(Sex, Survived, Embarked, sort = TRUE)
+
+data_agg2
+```
+
+Table 4.4. Table of People Survived Based on Gender and Embarked Status
+
+```{r}
+ggplot(data_agg2, mapping = aes(x = Survived, y = n)) +
+  geom_col(aes(fill = Sex), position = "dodge") +
+  labs(title = "People Survived Based on Gender and Embarked Status",
+       x = "Survived Status",
+       y = "Total") +
+  facet_wrap(~Embarked) +
+  theme_bw()
+```
+
+Figure 4.8. Barplot of People Survived Based on Gender and Embarked Status   
+
+As it shown above, most casualties are from male passengers who boarded from Southampton (S). THe number of female who boarded from Southampton (S) and didn't survive almost the same as female passengers who boarded from Cherbourg (C) and survived from the accident.
+
+```{r}
+data_subset3 <- data[, c("Survived", "Embarked", "Pclass")]
+
+data_agg3 <- data_subset3 %>% 
+  mutate(Survived = as.factor(Survived)) %>% 
+  count(Pclass, Survived, Embarked, sort = TRUE)
+
+data_agg3
+```
+
+Table 4.5. Table of People Survived Based on Passenger Class and Embarked Status
+
+```{r}
+ggplot(data_agg3, mapping = aes(x = Survived, y = n)) +
+  geom_col(aes(fill = Pclass), position = "dodge") +
+  labs(title = "People Survived Based on Passenger Class and Embarked Status",
+       x = "Survived Status",
+       y = "Total") +
+  scale_fill_brewer(palette = "Set2") +
+  facet_wrap(~Embarked)
+```
+
+Figure 4.9. Barplot of People Survived Based on Passenger Class and Embarked Status   
+
+From the figure above, we could say that passengers from 1st class is not always more likely to survive. The casualty number of 1st class passengers boarded from Southampton (S) is higher than 3rd class passengers boarded from Cherbourg (C) and Queenstown (Q).
